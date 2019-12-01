@@ -1,0 +1,78 @@
+#!/bin/bash
+echo "Regenerating README Table"
+
+if [ -a .commit ]
+then
+    rm -f .commit
+    cat<<'EOF' > .process.awk
+#!/usr/bin/env gawk
+BEGIN{
+  FS = "[| \t`]+";
+}
+{
+  print;
+  l+=$2;
+  c+=$3;
+  b+=$4;
+  t+=$5;
+  for (i=7;i<=NF;i++) {
+    val=$i
+    arr[val]++;
+  }
+}
+END{
+  out="";
+  PROCINFO["sorted_in"] = "@val_num_desc"
+  for (i in arr) {
+    if (i ~ /.*[A-Za-z]>*/ ) {
+      out=out" `"i"`&nbsp;<sup>**`"arr[i]"`**</sup> ";
+    }
+  }
+  print "**TOTAL**|**" l "**|**" c "**|**" b "**|**" t "**| | " out;
+}
+EOF
+
+    if [ ! -d ./build/ ]; then
+        mkdir build
+        cd build
+        cmake ..
+        cd ..
+    fi
+    cmake --build ./build
+    (gawk 'BEGIN{ p = 1 }/^ Day /{ p = 0 }{ if (p == 1) { print } }' README.md
+     echo " Day | Lines | Code  | Bytes | Time (ms) | Source | Headers"
+     echo ":---:|:-----:|:-----:|:-----:|:---------:|:------:|:-------") > README2.md
+    ./build/src/Advent --time=yes > .output.txt
+    cat .output.txt
+    num=1
+    for file in $(/bin/ls src/Day*.cpp | sort -V)
+    do
+        (
+          id=$(basename $file .cpp)
+          # day
+          (echo $num)
+          # lines
+          (grep -c '^' $file)
+          # code
+          (grep -c '[A-Za-z0-9_]' $file)
+          # bytes
+          (wc -m < $file)
+          # time
+          (grep -i -A 4 ${id} .output.txt | gsed -r '/time/!d;s/^.* (.*)ms.*$/\1/' | gawk '{s+=$1;}END{printf "`%0.4lf`\n", s;}')
+          # source
+          (echo "[${id}.cpp](https://github.com/willkill07/AdventOfCode2019/blob/master/${file})")
+          # headers
+          gsed -r '/^[ \t]*#[ \t]*include/!d;s/^[^<"]*.([^>"]*).[ \t]*$/`\1`/' $file > header_$num.txt
+          paste -sd ' ' header_$num.txt
+          rm -f header_$num.txt
+        ) > all_$num.txt
+        paste -sd\| all_$num.txt >> .temp_file.txt
+        rm -f all_$num.txt
+        num=$((num+1))
+    done
+    gawk -f .process.awk < .temp_file.txt | gsed -r "s|`([A-Za-z0-9_]+\.hpp)`|[`\1`](https://github.com/willkill07/AdventOfCode2019/blob/master/include/\1)|g" > README3.md && cat README2.md README3.md > README.md
+    rm -f .temp_file.txt .process.awk README2.md README3.md .output.txt
+    git add README.md
+    git commit --amend -C HEAD --no-verify
+fi
+exit
